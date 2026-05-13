@@ -1,0 +1,21 @@
+bundle:
+  name: aml_sar_regulatory_pipeline
+
+variables:
+  catalog:
+    default: bfsi_regulatory_catalog
+  report_date:
+    default: "2026-03-31"
+
+workspace:
+  root_path: /Shared/dab/aml_sar
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    default: true
+    mode: development
+  prod:
+    mode: production

@@ -1,0 +1,139 @@
+resources:
+  jobs:
+    aml_sar_pipeline:
+      name: "AML_SAR Regulatory Pipeline"
+      queue:
+        enabled: true
+      max_concurrent_runs: 1
+      tags:
+        report: "AML_SAR"
+        catalog: "bfsi_regulatory_catalog"
+      environments:
+        - environment_key: serverless
+          spec:
+            client: "1"
+      tasks:
+    - task_key: bronze_core_banking_transactions
+      description: "[bronze] raw_sources.core_banking_transactions"
+      environment_key: serverless
+      notebook_task:
+        notebook_path: ./src/ingest/core_banking_transactions.py
+        base_parameters:
+          catalog: "${{var.catalog}}"
+          report_date: "${{var.report_date}}"
+          table_name: "core_banking_transactions"
+          schema_name: "raw_sources"
+
+    - task_key: bronze_crm_customer_profile
+      description: "[bronze] raw_sources.crm_customer_profile"
+      environment_key: serverless
+      notebook_task:
+        notebook_path: ./src/ingest/crm_customer_profile.py
+        base_parameters:
+          catalog: "${{var.catalog}}"
+          report_date: "${{var.report_date}}"
+          table_name: "crm_customer_profile"
+          schema_name: "raw_sources"
+
+    - task_key: bronze_tms_alerts
+      description: "[bronze] raw_sources.tms_alerts"
+      environment_key: serverless
+      notebook_task:
+        notebook_path: ./src/ingest/tms_alerts.py
+        base_parameters:
+          catalog: "${{var.catalog}}"
+          report_date: "${{var.report_date}}"
+          table_name: "tms_alerts"
+          schema_name: "raw_sources"
+
+    - task_key: bronze_watchlist_screening
+      description: "[bronze] raw_sources.watchlist_screening"
+      environment_key: serverless
+      notebook_task:
+        notebook_path: ./src/ingest/watchlist_screening.py
+        base_parameters:
+          catalog: "${{var.catalog}}"
+          report_date: "${{var.report_date}}"
+          table_name: "watchlist_screening"
+          schema_name: "raw_sources"
+
+    - task_key: silver_fact_transactions
+      description: "[silver] conformed.fact_transactions"
+      environment_key: serverless
+      depends_on:
+        - task_key: bronze_core_banking_transactions
+      notebook_task:
+        notebook_path: ./src/transform/fact_transactions.py
+        base_parameters:
+          catalog: "${{var.catalog}}"
+          report_date: "${{var.report_date}}"
+          table_name: "fact_transactions"
+          schema_name: "conformed"
+
+    - task_key: silver_dim_customer
+      description: "[silver] conformed.dim_customer"
+      environment_key: serverless
+      depends_on:
+        - task_key: bronze_crm_customer_profile
+        - task_key: bronze_watchlist_screening
+      notebook_task:
+        notebook_path: ./src/transform/dim_customer.py
+        base_parameters:
+          catalog: "${{var.catalog}}"
+          report_date: "${{var.report_date}}"
+          table_name: "dim_customer"
+          schema_name: "conformed"
+
+    - task_key: gold_customer_txn_behavior
+      description: "[gold] aml_features.customer_txn_behavior"
+      environment_key: serverless
+      depends_on:
+        - task_key: silver_fact_transactions
+      notebook_task:
+        notebook_path: ./src/transform/customer_txn_behavior.py
+        base_parameters:
+          catalog: "${{var.catalog}}"
+          report_date: "${{var.report_date}}"
+          table_name: "customer_txn_behavior"
+          schema_name: "aml_features"
+
+    - task_key: gold_alert_enriched
+      description: "[gold] aml_features.alert_enriched"
+      environment_key: serverless
+      depends_on:
+        - task_key: bronze_tms_alerts
+        - task_key: silver_dim_customer
+        - task_key: gold_customer_txn_behavior
+      notebook_task:
+        notebook_path: ./src/transform/alert_enriched.py
+        base_parameters:
+          catalog: "${{var.catalog}}"
+          report_date: "${{var.report_date}}"
+          table_name: "alert_enriched"
+          schema_name: "aml_features"
+
+    - task_key: gold_sar_case
+      description: "[gold] sar_reporting.sar_case"
+      environment_key: serverless
+      depends_on:
+        - task_key: gold_alert_enriched
+      notebook_task:
+        notebook_path: ./src/transform/sar_case.py
+        base_parameters:
+          catalog: "${{var.catalog}}"
+          report_date: "${{var.report_date}}"
+          table_name: "sar_case"
+          schema_name: "sar_reporting"
+
+    - task_key: gold_sar_submission_payload
+      description: "[gold] sar_reporting.sar_submission_payload"
+      environment_key: serverless
+      depends_on:
+        - task_key: gold_sar_case
+      notebook_task:
+        notebook_path: ./src/transform/sar_submission_payload.py
+        base_parameters:
+          catalog: "${{var.catalog}}"
+          report_date: "${{var.report_date}}"
+          table_name: "sar_submission_payload"
+          schema_name: "sar_reporting"
