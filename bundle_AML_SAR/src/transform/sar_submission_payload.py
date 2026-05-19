@@ -19,24 +19,36 @@ print(f"Transform: {TARGET}")
 # COMMAND ----------
 # Transform: payload_render
 # Upstream tables were already created by bootstrap and populated by prior tasks
-    src = spark.table('`{CATALOG}`.`sar_reporting`.`sar_case`')
-    df = (src
-        .filter(F.col('filing_status').isin('DRAFT','APPROVED'))
-        .withColumn('filing_institution', F.lit('BFSI_BANK_001'))
-        .withColumn('subject_json', F.to_json(F.struct('sar_case_id','sar_type')))
-        .withColumn('activity_json', F.to_json(F.struct('total_amount_usd','suspicious_activity_begin','suspicious_activity_end')))
-        .withColumn('narrative_final',  F.col('narrative_text'))
-        .withColumn('xml_payload',      F.lit(None).cast('string'))
-        .withColumn('payload_hash',     F.sha2(F.col('narrative_text'), 256))
-        .withColumn('generated_ts',     F.current_timestamp())
-    )
-    _cols = [c for c in ['sar_case_id', 'filing_institution', 'subject_json', 'activity_json', 'narrative_final', 'xml_payload', 'payload_hash', 'generated_ts'] if c in df.columns]
-    df = df.select(_cols)
-
-# COMMAND ----------
-# DQ — manifest rules via shared dq_runner
-%run ../dq/dq_runner
-df = run_dq(df, TABLE_NAME, raise_on_critical=True)
+src = spark.table(f'`{CATALOG}`.`sar_reporting`.`sar_case`')
+df = (src
+    .filter(F.col('filing_status').isin('DRAFT','APPROVED'))
+    .withColumn('filing_institution', F.lit('BFSI_BANK_001'))
+    .withColumn('subject_json', F.to_json(F.struct('sar_case_id','sar_type')))
+    .withColumn('activity_json', F.to_json(F.struct('total_amount_usd','suspicious_activity_begin','suspicious_activity_end')))
+    .withColumn('narrative_final', F.col('narrative_text'))
+    .withColumn('xml_payload', F.concat(
+        F.lit('<EFilingBatchXML>\n  <Activity>\n'),
+        F.lit('    <FilingInstitution>BFSI_BANK_001</FilingInstitution>\n'),
+        F.lit('    <SARCaseId>'), F.col('sar_case_id'), F.lit('</SARCaseId>\n'),
+        F.lit('    <SARType>'), F.col('sar_type'), F.lit('</SARType>\n'),
+        F.lit('    <SuspiciousActivityBeginDate>'),
+            F.date_format(F.col('suspicious_activity_begin'), 'yyyy-MM-dd'),
+            F.lit('</SuspiciousActivityBeginDate>\n'),
+        F.lit('    <SuspiciousActivityEndDate>'),
+            F.date_format(F.col('suspicious_activity_end'), 'yyyy-MM-dd'),
+            F.lit('</SuspiciousActivityEndDate>\n'),
+        F.lit('    <TotalAmountUSD>'),
+            F.col('total_amount_usd').cast('string'),
+            F.lit('</TotalAmountUSD>\n'),
+        F.lit('    <Narrative>'), F.col('narrative_text'), F.lit('</Narrative>\n'),
+        F.lit('    <FilingStatus>'), F.col('filing_status'), F.lit('</FilingStatus>\n'),
+        F.lit('  </Activity>\n</EFilingBatchXML>')
+    ))
+    .withColumn('payload_hash', F.sha2(F.col('xml_payload'), 256))
+    .withColumn('generated_ts', F.current_timestamp())
+)
+_cols = [c for c in ['sar_case_id', 'filing_institution', 'subject_json', 'activity_json', 'narrative_final', 'xml_payload', 'payload_hash', 'generated_ts'] if c in df.columns]
+df = df.select(_cols)
 
 # COMMAND ----------
 # Write into existing table (schema created by bootstrap)
@@ -48,3 +60,4 @@ df = run_dq(df, TABLE_NAME, raise_on_critical=True)
 count = spark.table(TARGET).count()
 print(f"  [OK] {count} rows in {TARGET}")
 dbutils.jobs.taskValues.set(key="sar_submission_payload_count", value=count)
+

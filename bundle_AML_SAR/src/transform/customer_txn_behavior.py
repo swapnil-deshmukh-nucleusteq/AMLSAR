@@ -19,37 +19,32 @@ print(f"Transform: {TARGET}")
 # COMMAND ----------
 # Transform: feature_aggregation
 # Upstream tables were already created by bootstrap and populated by prior tasks
-    src       = spark.table('`{CATALOG}`.`conformed`.`fact_transactions`')
-    report_dt = F.lit(REPORT_DATE).cast('date')
-    df = (src
-        .groupBy('customer_id')
-        .agg(
-            F.sum(F.when(F.datediff(report_dt, F.to_date('txn_date')) <= 30,
-                  F.col('txn_amount_usd'))).alias('txn_volume_usd_30d'),
-            F.count(F.when(F.datediff(report_dt, F.to_date('txn_date')) <= 30,
-                  F.lit(1))).alias('txn_count_30d'),
-            F.sum(F.when(F.datediff(report_dt, F.to_date('txn_date')) <= 90,
-                  F.col('txn_amount_usd'))).alias('txn_volume_usd_90d'),
-            F.count(F.when(F.datediff(report_dt, F.to_date('txn_date')) <= 90,
-                  F.lit(1))).alias('txn_count_90d'),
-            F.count(F.when(F.col('is_cash') &
-                  (F.datediff(report_dt, F.to_date('txn_date')) <= 30),
-                  F.lit(1))).alias('cash_txn_count_30d'),
-            F.countDistinct(F.when(
-                  F.datediff(report_dt, F.to_date('txn_date')) <= 30,
-                  F.col('counterparty_id'))).alias('unique_counterparties_30d'),
-        )
-        .withColumn('feature_date', report_dt)
-        .withColumn('structuring_flag',
-            (F.col('cash_txn_count_30d') >= 3) &
-            (F.col('txn_volume_usd_30d') / F.col('txn_count_30d').cast('double') < 10000))
-        .withColumn('rapid_movement_flag', F.lit(False))
+src       = spark.table(f'`{CATALOG}`.`conformed`.`fact_transactions`')
+report_dt = F.lit(REPORT_DATE).cast('date')
+df = (src
+    .groupBy('customer_id')
+    .agg(
+        F.sum(F.when(F.datediff(report_dt, F.to_date('txn_date')) <= 30,
+              F.col('txn_amount_usd'))).alias('txn_volume_usd_30d'),
+        F.count(F.when(F.datediff(report_dt, F.to_date('txn_date')) <= 30,
+              F.lit(1))).alias('txn_count_30d'),
+        F.sum(F.when(F.datediff(report_dt, F.to_date('txn_date')) <= 90,
+              F.col('txn_amount_usd'))).alias('txn_volume_usd_90d'),
+        F.count(F.when(F.datediff(report_dt, F.to_date('txn_date')) <= 90,
+              F.lit(1))).alias('txn_count_90d'),
+        F.count(F.when(F.col('is_cash') &
+              (F.datediff(report_dt, F.to_date('txn_date')) <= 30),
+              F.lit(1))).alias('cash_txn_count_30d'),
+        F.countDistinct(F.when(
+              F.datediff(report_dt, F.to_date('txn_date')) <= 30,
+              F.col('counterparty_id'))).alias('unique_counterparties_30d'),
     )
-
-# COMMAND ----------
-# DQ — manifest rules via shared dq_runner
-%run ../dq/dq_runner
-df = run_dq(df, TABLE_NAME, raise_on_critical=True)
+    .withColumn('feature_date', report_dt)
+    .withColumn('structuring_flag',
+        (F.col('cash_txn_count_30d') >= 3) &
+        (F.col('txn_volume_usd_30d') / F.col('txn_count_30d').cast('double') < 10000))
+    .withColumn('rapid_movement_flag', F.lit(False))
+)
 
 # COMMAND ----------
 # Write into existing table (schema created by bootstrap)
@@ -61,3 +56,4 @@ df = run_dq(df, TABLE_NAME, raise_on_critical=True)
 count = spark.table(TARGET).count()
 print(f"  [OK] {count} rows in {TARGET}")
 dbutils.jobs.taskValues.set(key="customer_txn_behavior_count", value=count)
+

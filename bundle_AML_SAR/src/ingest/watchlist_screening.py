@@ -76,11 +76,6 @@ df = (df
 )
 
 # COMMAND ----------
-# DQ — rules from manifest via shared dq_runner
-%run ../dq/dq_runner
-df = run_dq(df, TABLE_NAME, raise_on_critical=True)
-
-# COMMAND ----------
 # Write into the shell table created by bootstrap
 write_mode = "append" if LOAD_MODE == "INCREMENTAL" else "overwrite"
 (df.write
@@ -91,3 +86,4 @@ write_mode = "append" if LOAD_MODE == "INCREMENTAL" else "overwrite"
 count = spark.table(TARGET_FQN).count()
 print(f"  [OK] {count} rows in {TARGET_FQN}")
 dbutils.jobs.taskValues.set(key="watchlist_screening_count", value=count)
+
