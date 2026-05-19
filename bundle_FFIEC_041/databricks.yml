@@ -1,0 +1,21 @@
+bundle:
+  name: ffiec_041_regulatory_pipeline
+
+variables:
+  catalog:
+    default: bfsi_regulatory_catalog
+  report_date:
+    default: "2026-03-31"
+
+workspace:
+  root_path: /Shared/dab/ffiec_041
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    default: true
+    mode: development
+  prod:
+    mode: production

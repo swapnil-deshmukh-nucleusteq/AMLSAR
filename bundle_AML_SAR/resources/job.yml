@@ -137,3 +137,14 @@ resources:
               report_date: "${var.report_date}"
               table_name: "sar_submission_payload"
               schema_name: "sar_reporting"
+
+        - task_key: report_aml_sar_bsa_emitter
+          description: "[report] BSA e-filing emitter"
+          environment_key: serverless
+          depends_on:
+            - task_key: gold_sar_submission_payload
+          notebook_task:
+            notebook_path: ../src/reports/aml_sar_bsa_emitter.py
+            base_parameters:
+              catalog: "${var.catalog}"
+              report_date: "${var.report_date}"
